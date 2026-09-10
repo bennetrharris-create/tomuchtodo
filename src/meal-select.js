@@ -5,6 +5,7 @@ const SB_ANON=import.meta.env.VITE_SUPABASE_ANON_KEY;
 const supabase=(SB_URL&&SB_ANON)?createClient(SB_URL,SB_ANON):null;
 
 let installed=false;
+let installing=false;
 let refreshing=false;
 
 const style=document.createElement('style');
@@ -46,7 +47,13 @@ function normalizedSlots(rows){
   return normalized;
 }
 
+function removeDuplicateSelectors(){
+  const selectors=[...document.querySelectorAll('.meal-log-select')];
+  selectors.slice(1).forEach(el=>el.remove());
+}
+
 function render(rows){
+  removeDuplicateSelectors();
   const normalized=normalizedSlots(rows);
   const active=new Set(normalized.map(r=>r.meal_number));
   const count=active.size;
@@ -100,6 +107,7 @@ async function refresh(){
   if(refreshing)return;
   refreshing=true;
   try{
+    removeDuplicateSelectors();
     const {rows,schemaReady}=await getActiveMeals();
     if(!schemaReady){
       document.querySelector('#mealSchemaNote')?.classList.remove('hidden');
@@ -141,50 +149,63 @@ async function logSelectedMeal(){
 }
 
 async function install(){
-  if(installed)return;
+  removeDuplicateSelectors();
+  if(installed||installing)return;
   const button=document.querySelector('#mealButton');
   if(!button)return;
 
-  const state=await getActiveMeals();
-  if(!state.schemaReady){
-    // Keep the original sequential logger working until the one-time Supabase
-    // migration is applied, rather than breaking the existing tracker.
-    let note=document.querySelector('#mealSchemaNote');
-    if(!note){
-      note=document.createElement('div');
-      note.id='mealSchemaNote';
-      note.className='meal-schema-note';
-      note.textContent='Meal-number update pending. Run the new Supabase migration to enable choosing Meal 1–5.';
-      button.insertAdjacentElement('beforebegin',note);
-    }
+  const existing=document.querySelector('#mealSelect');
+  if(existing){
+    installed=true;
     return;
   }
 
-  installed=true;
-  const card=button.closest('.card');
-  if(card)card.id='mealTrackerCard';
+  installing=true;
+  try{
+    const state=await getActiveMeals();
+    if(!state.schemaReady){
+      let note=document.querySelector('#mealSchemaNote');
+      if(!note){
+        note=document.createElement('div');
+        note.id='mealSchemaNote';
+        note.className='meal-schema-note';
+        note.textContent='Meal-number update pending. Run the new Supabase migration to enable choosing Meal 1–5.';
+        button.insertAdjacentElement('beforebegin',note);
+      }
+      return;
+    }
 
-  const select=document.createElement('select');
-  select.id='mealSelect';
-  select.className='meal-log-select';
-  select.setAttribute('aria-label','Choose meal number');
-  button.insertAdjacentElement('beforebegin',select);
-  select.onchange=()=>{
-    if(!button.disabled)button.textContent=`Log Meal ${select.value}`;
-  };
+    if(document.querySelector('#mealSelect')){
+      installed=true;
+      return;
+    }
 
-  // main.js used direct onclick properties, so replacing these handlers here
-  // cleanly changes the behavior without stacking a second log action.
-  button.onclick=logSelectedMeal;
-  const quick=document.querySelector('#logMeal');
-  if(quick)quick.onclick=()=>{
-    card?.scrollIntoView({behavior:'smooth',block:'center'});
-    setTimeout(()=>select.focus(),350);
-  };
+    const card=button.closest('.card');
+    if(card)card.id='mealTrackerCard';
 
-  render(state.rows);
-  setTimeout(refresh,750);
-  setTimeout(refresh,1500);
+    const select=document.createElement('select');
+    select.id='mealSelect';
+    select.className='meal-log-select';
+    select.setAttribute('aria-label','Choose meal number');
+    button.insertAdjacentElement('beforebegin',select);
+    select.onchange=()=>{
+      if(!button.disabled)button.textContent=`Log Meal ${select.value}`;
+    };
+
+    button.onclick=logSelectedMeal;
+    const quick=document.querySelector('#logMeal');
+    if(quick)quick.onclick=()=>{
+      card?.scrollIntoView({behavior:'smooth',block:'center'});
+      setTimeout(()=>select.focus(),350);
+    };
+
+    installed=true;
+    render(state.rows);
+    setTimeout(refresh,750);
+    setTimeout(refresh,1500);
+  }finally{
+    installing=false;
+  }
 }
 
 const app=document.querySelector('#app');
