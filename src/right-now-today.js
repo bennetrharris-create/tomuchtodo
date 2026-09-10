@@ -52,9 +52,14 @@ function renderTodayRightNow(){
     nextTitle=current.title;
     nextSub=`Now · ends ${fmtTime(new Date(current.end))}`;
   }else if(next){
-    const mins=Math.max(0,Math.round((new Date(next.start)-now)/60000));
-    nextTitle="You're free";
-    nextSub=`Next: ${next.title} · ${fmtTime(new Date(next.start))}${mins<180?' · in '+mins+' min':''}`;
+    const mins=Math.max(0,Math.ceil((new Date(next.start)-now)/60000));
+    if(mins<=30){
+      nextTitle=next.title;
+      nextSub=`Coming up · starts in ${mins} min · ${fmtTime(new Date(next.start))}`;
+    }else{
+      nextTitle="You're free";
+      nextSub=`Next: ${next.title} · ${fmtTime(new Date(next.start))}`;
+    }
   }else{
     nextTitle="You're done for today";
     nextSub='No more scheduled events.';
