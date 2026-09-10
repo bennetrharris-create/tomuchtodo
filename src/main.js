@@ -236,8 +236,22 @@ async function loadMeals(){
   const {data,error}=await supabase.from('meals').select('id,eaten_at').gte('eaten_at',cutoff).order('eaten_at');if(error){console.error(error);return;}renderMeals(data||[]);
 }
 function renderMeals(rows){
-  const count=rows.length;$('#mealCount').textContent=count;$('#statMeals').textContent=`${count} / 5`;$('#mealButton').textContent=count<5?`Log Meal ${count+1}`:'5 / 5 Active';
-  const dots=$('#mealDots');dots.innerHTML='';for(let i=1;i<=5;i++){const b=document.createElement('button');b.className='meal '+(i<=count?'on':'');b.textContent=i;b.disabled=true;dots.appendChild(b);}
+  const activeRows=(rows||[]).slice(-5);
+  const count=Math.min(activeRows.length,5);
+  $('#mealCount').textContent=count;
+  $('#statMeals').textContent=`${count} / 5`;
+  $('#mealButton').textContent=count<5?`Log Meal ${count+1}`:'5 / 5 Active';
+  $('#mealButton').disabled=count>=5;
+  const dots=$('#mealDots');
+  dots.innerHTML='';
+  for(let i=1;i<=5;i++){
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='meal '+(i<=count?'on':'');
+    b.textContent=i;
+    b.disabled=true;
+    dots.appendChild(b);
+  }
 }
 async function saveMeal(){
   const cutoff=new Date(Date.now()-24*3600*1000).toISOString();const {count}=await supabase.from('meals').select('*',{count:'exact',head:true}).gte('eaten_at',cutoff);
@@ -255,6 +269,17 @@ async function saveWeight(){
   $('#weightInput').value='';$('#weightModal').classList.remove('open');loadWeight();
 }
 
-supabase?.auth.onAuthStateChange((_event,newSession)=>{if(Boolean(session)!==Boolean(newSession))location.reload();});
+supabase?.auth.onAuthStateChange((event,newSession)=>{
+  // Supabase emits INITIAL_SESSION when the page boots. Reloading on that event
+  // can create a refresh loop where the dashboard appears to flicker and clicks
+  // never have time to complete. Only react to actual sign-in/sign-out changes.
+  if(event==='SIGNED_OUT'){
+    session=null;
+    location.reload();
+  }else if(event==='SIGNED_IN' && !session){
+    session=newSession;
+    location.reload();
+  }
+});
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 boot();
