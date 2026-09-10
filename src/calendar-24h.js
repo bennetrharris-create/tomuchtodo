@@ -38,7 +38,7 @@ function localDateKey(d){
 function sameDate(a,b){return localDateKey(a)===localDateKey(b);}
 function fmtTime(d){return d.toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});}
 function fmtHour(d){return d.toLocaleTimeString([],{hour:'numeric'});}
-function escapeHtml(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));}
+function escapeHtml(s=''){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#039;'}[m]));}
 function categoryFor(title='',calendar=''){
   const s=(title+' '+calendar).toLowerCase();
   if(/chem|bio |biochem|physiology|equation|math|class|lecture|exam|canvas/.test(s))return 'School';
@@ -99,11 +99,12 @@ async function fetchEvents(day){
 }
 
 function addTimeLabel(times,date,top,{start=false,midnight=false}={}){
+  if(start&&sameDate(selectedDay(),new Date()))return;
   const label=document.createElement('div');
   label.className='time-label'+(start?' timeline-start':'')+(midnight?' timeline-midnight':'');
   label.style.top=top+'px';
   if(start){
-    label.textContent=sameDate(selectedDay(),new Date())?`Now · ${fmtTime(date)}`:fmtHour(date);
+    label.textContent=fmtHour(date);
   }else if(midnight){
     label.textContent=`12 AM · ${date.toLocaleDateString([],{weekday:'short'})}`;
   }else{
