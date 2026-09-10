@@ -98,11 +98,33 @@ function dashboardHtml(){
 
 async function boot(){
   if(!configured){app.innerHTML=authHtml(); wireAuth(); return;}
-  const {data}=await supabase.auth.getSession(); session=data.session;
+  try{
+    const sessionResult=await Promise.race([
+      supabase.auth.getSession(),
+      new Promise((_,reject)=>setTimeout(()=>reject(new Error('Session restore timed out')),5000))
+    ]);
+    if(sessionResult.error) throw sessionResult.error;
+    session=sessionResult.data.session;
+  }catch(e){
+    app.innerHTML=authHtml();
+    wireAuth();
+    showAuthNotice('Could not restore your session. Try signing in again.',true);
+    return;
+  }
   if(!session){app.innerHTML=authHtml(); wireAuth(); return;}
-  app.innerHTML=dashboardHtml(); wireDashboard(); greeting(); renderTimes();
-  await Promise.all([loadCalendar(),loadTasks(),loadMeals(),loadWeight()]);
+
+  // Make the dashboard interactive immediately. Cloud/calendar data loads in
+  // the background so one slow integration cannot freeze the whole app.
+  app.innerHTML=dashboardHtml();
+  wireDashboard();
+  greeting();
+  renderTimes();
   renderCalendar();
+
+  loadTasks().catch(console.error);
+  loadMeals().catch(console.error);
+  loadWeight().catch(console.error);
+  loadCalendar().then(renderCalendar).catch(console.error);
 }
 
 function wireAuth(){
@@ -148,13 +170,24 @@ function greeting(){
 }
 
 async function authedFunction(name, options={}){
-  const {data}=await supabase.auth.getSession();
+  const {data,error}=await supabase.auth.getSession();
+  if(error) throw error;
   const token=data.session?.access_token;
-  const headers={...(options.headers||{}),Authorization:`Bearer ${token}`};
-  const res=await fetch(`/.netlify/functions/${name}`,{...options,headers});
-  const body=await res.json().catch(()=>({}));
-  if(!res.ok)throw new Error(body.error||`Function ${name} failed`);
-  return body;
+  if(!token) throw new Error('Your session expired. Please sign in again.');
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),8000);
+  try{
+    const headers={...(options.headers||{}),Authorization:`Bearer ${token}`};
+    const res=await fetch(`/.netlify/functions/${name}`,{...options,headers,signal:controller.signal});
+    const body=await res.json().catch(()=>({}));
+    if(!res.ok)throw new Error(body.error||`Function ${name} failed`);
+    return body;
+  }catch(e){
+    if(e.name==='AbortError') throw new Error('Calendar connection timed out');
+    throw e;
+  }finally{
+    clearTimeout(timeout);
+  }
 }
 
 async function connectCalendar(){
@@ -236,8 +269,7 @@ async function loadMeals(){
   const {data,error}=await supabase.from('meals').select('id,eaten_at').gte('eaten_at',cutoff).order('eaten_at');if(error){console.error(error);return;}renderMeals(data||[]);
 }
 function renderMeals(rows){
-  const activeRows=(rows||[]).slice(-5);
-  const count=Math.min(activeRows.length,5);
+  const count=Math.min((rows||[]).length,5);
   $('#mealCount').textContent=count;
   $('#statMeals').textContent=`${count} / 5`;
   $('#mealButton').textContent=count<5?`Log Meal ${count+1}`:'5 / 5 Active';
@@ -269,17 +301,8 @@ async function saveWeight(){
   $('#weightInput').value='';$('#weightModal').classList.remove('open');loadWeight();
 }
 
-supabase?.auth.onAuthStateChange((event,newSession)=>{
-  // Supabase emits INITIAL_SESSION when the page boots. Reloading on that event
-  // can create a refresh loop where the dashboard appears to flicker and clicks
-  // never have time to complete. Only react to actual sign-in/sign-out changes.
-  if(event==='SIGNED_OUT'){
-    session=null;
-    location.reload();
-  }else if(event==='SIGNED_IN' && !session){
-    session=newSession;
-    location.reload();
-  }
-});
+// Sign-in and sign-out flows explicitly reload after they finish.
+// Avoid an auth-state reload listener here; Supabase may emit SIGNED_IN while
+// restoring a session, which can otherwise create an initialization loop.
 if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 boot();
