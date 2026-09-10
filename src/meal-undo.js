@@ -26,13 +26,21 @@ function activeCutoff(){return new Date(Date.now()-24*3600*1000).toISOString();}
 
 async function getActiveMeals(){
   if(!supabase)return [];
-  const {data,error}=await supabase.from('meals')
-    .select('id,eaten_at')
+  let result=await supabase.from('meals')
+    .select('id,eaten_at,meal_number')
     .gte('eaten_at',activeCutoff())
     .order('eaten_at',{ascending:false})
     .limit(5);
-  if(error){console.warn('Could not load meals for undo',error);return [];}
-  return data||[];
+
+  if(result.error&&((result.error.message||'').toLowerCase().includes('meal_number')||result.error.code==='42703')){
+    result=await supabase.from('meals')
+      .select('id,eaten_at')
+      .gte('eaten_at',activeCutoff())
+      .order('eaten_at',{ascending:false})
+      .limit(5);
+  }
+  if(result.error){console.warn('Could not load meals for undo',result.error);return [];}
+  return result.data||[];
 }
 
 function setUndoState(count){
@@ -40,7 +48,8 @@ function setUndoState(count){
   if(btn)btn.disabled=count<=0;
 }
 
-function renderMealState(rows){
+function renderLegacyMealState(rows){
+  if(document.querySelector('#mealSelect'))return;
   const count=Math.min((rows||[]).length,5);
   const mealCount=document.querySelector('#mealCount');
   const statMeals=document.querySelector('#statMeals');
@@ -93,13 +102,14 @@ function closeModal(){
 
 async function openUndo(){
   const meals=await getActiveMeals();
-  renderMealState(meals);
+  setUndoState(meals.length);
   if(!meals.length)return;
   pendingMeal=meals[0];
   ensureModal();
   const when=new Date(pendingMeal.eaten_at).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  const label=pendingMeal.meal_number?`Meal ${pendingMeal.meal_number}`:'your most recently logged meal';
   const text=document.querySelector('#mealUndoText');
-  if(text)text.textContent=`This will remove the meal you logged most recently at ${when}. Your active meal count will drop by one.`;
+  if(text)text.textContent=`This will remove ${label}, logged at ${when}. This cannot happen until you confirm below.`;
   document.querySelector('#mealUndoModal')?.classList.add('open');
 }
 
@@ -112,7 +122,10 @@ async function confirmUndo(){
     const {error}=await supabase.from('meals').delete().eq('id',pendingMeal.id);
     if(error)throw error;
     closeModal();
-    renderMealState(await getActiveMeals());
+    const rows=await getActiveMeals();
+    setUndoState(rows.length);
+    renderLegacyMealState(rows);
+    window.dispatchEvent(new CustomEvent('meal-state-changed'));
   }catch(e){
     alert('Could not undo that meal: '+e.message);
   }finally{
@@ -138,7 +151,7 @@ async function ensureUndoUI(){
   note.textContent='Undo always asks for confirmation.';
   btn.insertAdjacentElement('afterend',note);
 
-  renderMealState(await getActiveMeals());
+  setUndoState((await getActiveMeals()).length);
 }
 
 const app=document.querySelector('#app');
