@@ -42,10 +42,12 @@ using (auth.uid() = user_id);
 create table if not exists public.meals (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  meal_number smallint check (meal_number is null or meal_number between 1 and 5),
   eaten_at timestamptz not null default now()
 );
 
 create index if not exists meals_user_time_idx on public.meals(user_id, eaten_at desc);
+create index if not exists meals_user_number_time_idx on public.meals(user_id, meal_number, eaten_at desc);
 
 alter table public.meals enable row level security;
 
