@@ -1,4 +1,4 @@
-const CACHE='mylife-v03-16';
+const CACHE='mylife-v03-17';
 const SHELL=['/','/manifest.json'];
 
 self.addEventListener('install',event=>{
