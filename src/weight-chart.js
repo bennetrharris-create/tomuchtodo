@@ -98,7 +98,7 @@ function renderGraph(host){
 
   let xMin=Math.min(...times),xMax=Math.max(...times);
   if(xMin===xMax){xMin-=12*3600000;xMax+=12*3600000;}
-  let rawMin=Math.min(...vals),rawMax=Math.max(...vals);
+  const rawMin=Math.min(...vals),rawMax=Math.max(...vals);
   const spread=Math.max(rawMax-rawMin,1);
   let yMin=Math.floor((rawMin-spread*.18)*2)/2;
   let yMax=Math.ceil((rawMax+spread*.18)*2)/2;
@@ -210,12 +210,9 @@ function ensureChart(){
   card.classList.add('weight-chart-card');
   let host=card.querySelector('[data-weight-chart="1"]');
   if(!host)host=makeHost(card);
-  if(host!==lastHost){
-    lastHost=host;
-    loadWeights(host);
-  }else if(allWeights.length){
-    renderGraph(host);
-  }
+  if(host===lastHost)return;
+  lastHost=host;
+  loadWeights(host);
 }
 
 function queueEnsure(){
